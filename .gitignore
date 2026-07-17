@@ -1,0 +1,9 @@
+dist/
+node_modules/
+
+# WAL sidecars — the .db itself is committed on purpose (it is the artifact).
+data/*.db-wal
+data/*.db-shm
+
+.DS_Store
+.claude/settings.local.json
