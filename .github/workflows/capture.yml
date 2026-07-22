@@ -1,18 +1,14 @@
 name: capture ephemeral lineups
 
-# Sisyphos and Tresor publish lineups late and remove them after the party. This polls
-# through the weekend window (times are UTC; Berlin is +1/+2) to catch them before they
-# vanish, then commits the updated database so nothing is lost.
+# Sisyphos and Tresor publish lineups late and remove them after the party. This captures
+# them before they vanish (gone by Wed/Thu), then commits the updated database. Runs once
+# on Sunday — by then the weekend's lineups are up but not yet removed. Trigger manually
+# any time via the Actions tab (workflow_dispatch) if you want an extra catch.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 20 * * 5'   # Fri 20:00 UTC — Sisyphos lineups start landing
-    - cron: '0 23 * * 5'   # Fri 23:00 UTC
-    - cron: '0 8 * * 6'    # Sat 08:00 UTC
-    - cron: '0 14 * * 6'   # Sat 14:00 UTC
-    - cron: '0 20 * * 6'   # Sat 20:00 UTC
-    - cron: '0 10 * * 0'   # Sun 10:00 UTC
+    - cron: '0 14 * * 0'   # Sun 14:00 UTC (Berlin 15:00/16:00)
 
 permissions:
   contents: write
