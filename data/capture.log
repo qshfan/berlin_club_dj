@@ -1,2 +1,2 @@
 {"at":"2026-07-22T08:49:15.352Z","mode":"capture","events":1165,"newEvents":0,"newPerfs":0,"slotDelta":{"berghain.berlin":0,"tresorberlin.com":87},"failures":[]}
-{"at":"2026-07-22T23:38:46.960Z","mode":"full","events":1165,"newEvents":0,"newPerfs":7,"slotDelta":{"berghain.berlin":0,"sisyduck.com":0,"tresorberlin.com":0},"failures":[]}
+{"at":"2026-07-22T23:53:06.926Z","mode":"capture","events":1165,"newEvents":0,"newPerfs":7,"slotDelta":{"berghain.berlin":0,"sisyduck.com":0,"tresorberlin.com":0},"failures":[]}

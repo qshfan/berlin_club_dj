@@ -50,15 +50,19 @@ const startedAt = new Date().toISOString()
 const before = counts()
 
 console.log(`Capture pipeline — ${startedAt}`)
-console.log(`mode: ${FULL ? 'full (incl. Berghain)' : 'capture-forward (Sisyphos + Tresor)'}\n`)
+console.log(`mode: ${FULL ? 'FULL re-crawl (all Berghain history)' : 'incremental (default)'}\n`)
 
-const steps = []
-if (FULL) {
-  steps.push(['Berghain archive', 'ingest-berghain.mjs', []])
-  steps.push(['Berghain set times', 'ingest-berghain-times.mjs', []])
-}
-steps.push(['Sisyphos (ephemeral)', 'ingest-sisyphos.mjs', []])
-steps.push(['Tresor (ephemeral)', 'ingest-tresor.mjs', []])
+// All four sources every run, all incremental and cheap:
+//   Berghain archive   — skips artists already current (~20s)
+//   Berghain set times — only recent + upcoming events, unless --full (~15s vs ~9min)
+//   Sisyphos, Tresor   — capture-forward from the live pages
+// --full forces a complete Berghain set-time re-crawl; reserve it for a rare full rebuild.
+const steps = [
+  ['Berghain archive', 'ingest-berghain.mjs', []],
+  ['Berghain set times', 'ingest-berghain-times.mjs', FULL ? ['--full'] : []],
+  ['Sisyphos (ephemeral)', 'ingest-sisyphos.mjs', []],
+  ['Tresor (ephemeral)', 'ingest-tresor.mjs', []],
+]
 
 const results = {}
 for (const [label, cmd, a] of steps) results[label] = run(label, cmd, a)

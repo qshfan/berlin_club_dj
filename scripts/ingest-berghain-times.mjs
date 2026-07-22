@@ -84,12 +84,17 @@ const events = db
   )
   .all(clubId)
 
+// Incremental default: only recent + upcoming events, whose timetables are still being
+// posted or edited. Old events with no timetable (mostly 2004-2009) are NOT re-fetched
+// every run — they were checked during the one-time `--full` backfill and won't gain one.
+// Future events with no lineup yet are covered by iso_date >= cutoff. Use --full to
+// re-crawl the whole history.
 const cutoff = new Date(Date.now() - RECENT_DAYS * 86400000).toISOString().slice(0, 10)
 const todo = events
-  .filter((e) => FULL || e.have === 0 || e.iso_date >= cutoff)
+  .filter((e) => FULL || e.iso_date >= cutoff)
   .slice(0, LIMIT)
 
-console.log(`${events.length} events with a source page · ${events.length - todo.length} already enriched · fetching ${todo.length}\n`)
+console.log(`${events.length} source pages · fetching ${todo.length} recent/upcoming${FULL ? ' (full re-crawl)' : ''}\n`)
 
 const artistCache = new Map()
 function linkArtist(name) {

@@ -26,10 +26,10 @@ jobs:
         with:
           node-version: 22
 
-      # --full also refreshes the Berghain archive + set times (both incremental), so this
-      # single weekly job keeps every source current, not just the ephemeral ones.
+      # Incremental capture of every source: Sisyphos + Tresor (ephemeral) plus the cheap
+      # Berghain archive + recent/upcoming set-time refresh. Fast (~1 min); NOT --full.
       - name: Capture all sources
-        run: npm run capture -- --full --no-build
+        run: npm run capture -- --no-build
 
       - name: Commit any newly captured data
         run: |

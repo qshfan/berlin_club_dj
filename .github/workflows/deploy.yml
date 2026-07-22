@@ -33,7 +33,7 @@ jobs:
       # Incremental: Berghain archive + set-time enrichment touch only what changed.
       - name: Refresh data
         if: github.event_name != 'push'
-        run: npm run capture -- --full --no-build
+        run: npm run capture -- --no-build
 
       - run: npm run build
 
