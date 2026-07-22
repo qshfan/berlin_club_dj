@@ -1,11 +1,12 @@
 name: build & deploy (GitHub Pages)
 
-# Dormant on purpose: GitHub Pages needs a public repo (or a paid plan for private).
-# This repo is private and hosts elsewhere (Netlify/Cloudflare build dist/ on push), so
-# there is no schedule and no push trigger — nothing here runs automatically and nothing
-# fails weekly. If you make the repo public, add `push:`/`schedule:` back and enable Pages
-# in Settings; the weekly data refresh already lives in capture.yml.
+# Builds dist/ and publishes it to GitHub Pages. Runs on every push to master — including
+# the Sunday capture commit, so fresh data auto-redeploys — and can be triggered manually.
+# The weekly upstream refresh itself lives in capture.yml; push builds here just use the
+# committed data/berlin.db.
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
