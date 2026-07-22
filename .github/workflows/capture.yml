@@ -26,8 +26,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Capture ephemeral lineups (Sisyphos + Tresor)
-        run: npm run capture -- --no-build
+      # --full also refreshes the Berghain archive + set times (both incremental), so this
+      # single weekly job keeps every source current, not just the ephemeral ones.
+      - name: Capture all sources
+        run: npm run capture -- --full --no-build
 
       - name: Commit any newly captured data
         run: |

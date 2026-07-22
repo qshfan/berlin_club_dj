@@ -1,12 +1,12 @@
-name: build & deploy
+name: build & deploy (GitHub Pages)
 
+# Dormant on purpose: GitHub Pages needs a public repo (or a paid plan for private).
+# This repo is private and hosts elsewhere (Netlify/Cloudflare build dist/ on push), so
+# there is no schedule and no push trigger — nothing here runs automatically and nothing
+# fails weekly. If you make the repo public, add `push:`/`schedule:` back and enable Pages
+# in Settings; the weekly data refresh already lives in capture.yml.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    # Sunday 06:00 UTC — after Klubnacht, before anyone looks.
-    - cron: '0 6 * * 0'
 
 permissions:
   contents: read
