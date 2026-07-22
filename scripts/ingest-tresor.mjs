@@ -89,14 +89,15 @@ for (const [i, ev] of listing.entries()) {
     .get(clubId, ev.slug, ev.title, ev.isoDate, ev.url, SOURCE).id
   nEvents++
 
-  // Capture-forward: a page can partially degrade before it rolls off, and a flaky event
-  // fetch falls back to the untimed listing. So only replace this event's stored slots when
-  // the fresh capture is at least as complete — never downgrade a richer earlier snapshot,
-  // and never leave timed + untimed duplicates of the same set.
+  // Capture-forward: Tresor posts set times only ~2-3 weeks ahead, and a flaky event
+  // fetch falls back to the untimed listing. Keep the BETTER snapshot, ranked by (timed
+  // slots, then total slots) — so a later untimed grab never overwrites a timed one, and
+  // times are picked up as soon as they're published.
   const freshCount = floors.reduce((n, f) => n + f.slots.length, 0)
-  const storedCount = db.prepare('SELECT COUNT(*) n FROM slots WHERE event_id = ? AND source = ?').get(eventId, SOURCE).n
-  if (freshCount < storedCount) {
-    process.stdout.write(`  ${String(i + 1).padStart(2)}/${listing.length} ${ev.slug.slice(0, 42).padEnd(42)} kept richer snapshot (${storedCount} ≥ ${freshCount})\r`)
+  const freshTimed = floors.reduce((n, f) => n + f.slots.filter((s) => s.clock).length, 0)
+  const stored = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(clock IS NOT NULL), 0) t FROM slots WHERE event_id = ? AND source = ?').get(eventId, SOURCE)
+  if (stored.t > freshTimed || (stored.t === freshTimed && stored.n > freshCount)) {
+    process.stdout.write(`  ${String(i + 1).padStart(2)}/${listing.length} ${ev.slug.slice(0, 42).padEnd(42)} kept better snapshot (${stored.t}t/${stored.n})\r`)
     await sleep(DELAY_MS)
     continue
   }
