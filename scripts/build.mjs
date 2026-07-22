@@ -471,19 +471,27 @@ writeFileSync(
 // --- search index ----------------------------------------------------------
 writeFileSync(
   join(DIST, 'search.json'),
-  JSON.stringify({
-    generated: new Date().toISOString(),
-    clubs: clubs.map((c) => [c.slug, c.name]),
-    // [name, slug, sets, firstYear, lastYear, clubSlugs[]]
-    artists: artists.map((a) => [
-      a.name,
-      a.slug,
-      a.sets,
-      Number(a.first_night.slice(0, 4)),
-      Number(a.last_night.slice(0, 4)),
-      clubsByArtist.get(a.id) ?? [],
-    ]),
-  })
+  (() => {
+    // Per-DJ breakdown by (club, year) so the list can re-aggregate sets and the year
+    // range for whatever club / year filter is active — not just show global totals.
+    const clubIndex = new Map(clubs.map((c, i) => [c.slug, i]))
+    return JSON.stringify({
+      generated: new Date().toISOString(),
+      clubs: clubs.map((c) => [c.slug, c.name]),
+      // [name, slug, perf] ; perf = [[clubIdx, year, count], ...]
+      artists: artists.map((a) => {
+        const counts = new Map()
+        for (const p of perfByArtist.get(a.id) ?? []) {
+          const ci = clubIndex.get(clubById.get(p.club_id)?.slug)
+          if (ci === undefined) continue
+          const key = ci * 10000 + Number(p.iso_date.slice(0, 4))
+          counts.set(key, (counts.get(key) || 0) + 1)
+        }
+        const perf = [...counts.entries()].map(([k, c]) => [Math.floor(k / 10000), k % 10000, c])
+        return [a.name, a.slug, perf]
+      }),
+    })
+  })()
 )
 
 // --- static assets ---------------------------------------------------------

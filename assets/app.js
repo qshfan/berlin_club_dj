@@ -51,31 +51,60 @@ if (q) {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
 
+  let clubSlugs = []
+  let clubNames = {}
+
   fetch('search.json?v=' + (window.__V || ''))
     .then((r) => r.json())
     .then((d) => {
-      artists = d.artists.map(([name, slug, sets, first, last, clubs]) => ({
-        name,
-        slug,
-        sets,
-        first,
-        last,
-        clubs: clubs || [],
-        key: norm(name),
-      }))
+      clubSlugs = (d.clubs || []).map((c) => c[0])
+      clubNames = Object.fromEntries(d.clubs || [])
+      artists = d.artists.map(([name, slug, perf]) => ({ name, slug, perf, key: norm(name) }))
       ready = true
+      applyUrl()
       render()
     })
     .catch(() => {
       hint.textContent = 'Could not load the search index.'
     })
 
-  function score(a, needle) {
-    const i = a.key.indexOf(needle)
-    if (i === -1) return -1
-    // Prefix match beats mid-string; ties broken by how much they played.
-    return (i === 0 ? 1e6 : 1e3 - i) + a.sets
+  // Filters are reflected in the URL, so a filtered view is shareable and reloadable.
+  function applyUrl() {
+    const p = new URLSearchParams(location.search)
+    if (clubSel && p.get('club') && clubSel.querySelector(`option[value="${p.get('club')}"]`)) clubSel.value = p.get('club')
+    if (fromSel && p.get('from')) fromSel.value = p.get('from')
+    if (toSel && p.get('to')) toSel.value = p.get('to')
+    if (p.get('q')) q.value = p.get('q')
   }
+  function syncUrl() {
+    const p = new URLSearchParams()
+    if (q.value.trim()) p.set('q', q.value.trim())
+    if (clubSel && clubSel.value !== 'all') p.set('club', clubSel.value)
+    if (fromSel && Number(fromSel.value) !== minYear) p.set('from', fromSel.value)
+    if (toSel && Number(toSel.value) !== maxYear) p.set('to', toSel.value)
+    const qs = p.toString()
+    history.replaceState(null, '', qs ? `?${qs}` : location.pathname)
+  }
+
+  // Re-aggregate a DJ's sets and active year-range for the current club/year filter.
+  // Returns null if they have no sets under the filter (so they drop out of the list).
+  function aggregate(a, club, from, to) {
+    let sets = 0
+    let first = Infinity
+    let last = -Infinity
+    for (let i = 0; i < a.perf.length; i++) {
+      const e = a.perf[i] // [clubIdx, year, count]
+      const y = e[1]
+      if (y < from || y > to) continue
+      if (club !== 'all' && clubSlugs[e[0]] !== club) continue
+      sets += e[2]
+      if (y < first) first = y
+      if (y > last) last = y
+    }
+    return sets ? { sets, first, last } : null
+  }
+
+  const namePos = (a, needle) => (needle ? a.key.indexOf(needle) : 0)
 
   function render() {
     if (!ready) return
@@ -86,23 +115,26 @@ if (q) {
     const filtersOn = club !== 'all' || from !== minYear || to !== maxYear
     if (resetBtn) resetBtn.hidden = !filtersOn && !needle
 
-    let list = artists.filter(
-      (a) =>
-        (club === 'all' || a.clubs.includes(club)) &&
-        // year-range overlap: active somewhere within [from, to]
-        a.last >= from &&
-        a.first <= to
-    )
-
-    if (needle) {
-      list = list
-        .map((a) => ({ a, s: score(a, needle) }))
-        .filter((x) => x.s >= 0)
-        .sort((x, y) => y.s - x.s)
-        .map((x) => x.a)
-    } else {
-      list = list.slice().sort((x, y) => y.sets - x.sets)
+    // Each row's numbers are computed for the active filter, not the global totals.
+    let list = []
+    let maxSets = 1
+    for (let i = 0; i < artists.length; i++) {
+      const a = artists[i]
+      if (needle && namePos(a, needle) === -1) continue
+      const g = aggregate(a, club, from, to)
+      if (!g) continue
+      list.push({ a, g })
+      if (g.sets > maxSets) maxSets = g.sets
     }
+
+    list.sort((x, y) => {
+      if (needle) {
+        const px = namePos(x.a, needle) === 0 ? 0 : 1
+        const py = namePos(y.a, needle) === 0 ? 0 : 1
+        if (px !== py) return px - py
+      }
+      return y.g.sets - x.g.sets
+    })
 
     const total = list.length
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -112,15 +144,17 @@ if (q) {
 
     results.innerHTML = shown
       .map(
-        (a) => `<li style="--w:${Math.min(100, (a.sets / artists[0].sets) * 100)}%"><a href="artist/${a.slug}.html">
+        ({ a, g }) => `<li style="--w:${Math.min(100, (g.sets / maxSets) * 100)}%"><a href="artist/${a.slug}.html">
       <span class="rname">${escapeHtml(a.name)}</span>
-      <span class="rmeta">${a.first}${a.last !== a.first ? '–' + a.last : ''} · ${a.sets} set${a.sets === 1 ? '' : 's'}</span>
+      <span class="rmeta">${g.first}${g.last !== g.first ? '–' + g.last : ''} · ${g.sets} set${g.sets === 1 ? '' : 's'}</span>
     </a></li>`
       )
       .join('')
 
     const n = total.toLocaleString('en')
-    hint.textContent = total === artists.length ? `${n} DJs · sorted by sets played` : `${n} DJ${total === 1 ? '' : 's'}`
+    const where = club === 'all' ? 'DJs' : `DJs at ${clubNames[club] || club}`
+    const when = filtersOn && (from !== minYear || to !== maxYear) ? ` · ${from}–${to}` : ''
+    hint.textContent = `${n} ${where}${when}`
 
     // Pagination — lets you browse every DJ, not just the first page.
     if (total <= PAGE_SIZE) {
@@ -140,6 +174,7 @@ if (q) {
   // Any filter/search change resets to the first page; pagination keeps it.
   const update = () => {
     page = 0
+    syncUrl()
     render()
   }
 
