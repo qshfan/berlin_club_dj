@@ -50,7 +50,7 @@ if (q) {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
 
-  fetch('search.json')
+  fetch('search.json?v=' + (window.__V || ''))
     .then((r) => r.json())
     .then((d) => {
       artists = d.artists.map(([name, slug, sets, first, last, clubs]) => ({

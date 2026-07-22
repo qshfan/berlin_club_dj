@@ -23,15 +23,11 @@
 // cron through a party and the archive accrues the slots that were genuinely published.
 // It will stay sparse. That is the truth about this club, not a bug to fix.
 
-import { openDb, upsertClub, upsertSource, upsertArtist, upsertEvent, upsertFloor, upsertPerformance, upsertSlot } from './db.mjs'
+import { openDb, upsertClub, upsertSource, upsertArtist, upsertEvent, upsertFloor, upsertPerformance, upsertSlot, splitBilling } from './db.mjs'
+import { parseSisyfan } from './parse-sisyfan.mjs'
 
 const BASE = 'https://sisyduck.com'
 const SOURCE = 'sisyduck.com'
-const DELAY_MS = 400 // gentle: this is someone's hobby server
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const args = new Set(process.argv.slice(2))
-const LIVE_ONLY = !args.has('--all-events')
 
 async function get(path, asJson = false) {
   const res = await fetch(BASE + path, {
@@ -42,20 +38,9 @@ async function get(path, asJson = false) {
   return asJson ? res.json() : res.text()
 }
 
-function textLines(html) {
-  const stripped = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, '\n')
-  const lines = stripped
-    .split('\n')
-    .map((l) => l.replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').trim())
-    .filter((l) => l && l.length < 140)
-  const out = []
-  for (const l of lines) if (!out.length || out[out.length - 1] !== l) out.push(l)
-  return out
-}
-
 const DAYS = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
 
-// "Sat at 16:00" is ambiguous on its own — a party spans Fri night to Mon morning.
+// "Sat, 16:00" is ambiguous on its own — a party spans Fri night to Mon morning.
 // Resolve it against the event's real date range so Sat 08:00 and Sun 08:00 stay distinct.
 function resolveSlot(dayAbbr, hhmm, startISO, endISO) {
   const dow = DAYS[String(dayAbbr).toLowerCase().slice(0, 3)]
@@ -72,29 +57,6 @@ function resolveSlot(dayAbbr, hhmm, startISO, endISO) {
     }
   }
   return null
-}
-
-// Only trust "<Floor> will open with <Artist>, <Day> at <HH:MM>" — an announcement that is
-// unambiguously about THIS event. Everything else on the page is global chrome.
-// The markup splits these across lines, e.g.:
-//   ["Tunnel", "will open with Underslept, Sat at", "16:00"]
-// so the floor is the nearest preceding non-decoration line.
-function parseLiveSlots(lines) {
-  const out = []
-  const DECOR = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s·,]*$/u
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^will open with\s+(.+?),\s*(?:(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+)?at$/i.exec(lines[i])
-    if (!m) continue
-    const time = lines[i + 1]
-    if (!/^[0-2]?\d:[0-5]\d$/.test(time ?? '')) continue
-    let floor = null
-    for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
-      if (lines[j] && !DECOR.test(lines[j])) { floor = lines[j].trim(); break }
-    }
-    if (!floor) continue
-    out.push({ floor, artist: m[1].trim(), day: m[2] ?? null, time })
-  }
-  return out
 }
 
 const db = openDb()
@@ -131,74 +93,70 @@ for (const ev of events) {
 db.exec('COMMIT')
 console.log(`events:  ${events.length} stored`)
 
-// --- lineups: capture-forward only -------------------------------------------
-// Past parties retain no timetable, so crawling all 89 is pure waste and pure risk.
-// Default to events that are live or upcoming.
-const now = Date.now()
-const targets = LIVE_ONLY ? events.filter((e) => new Date(e.end).getTime() >= now) : events
-
-console.log(`lineups: probing ${targets.length} live/upcoming event(s)${LIVE_ONLY ? '' : ' (--all-events)'}\n`)
-
-const parsed = new Map()
-for (const ev of targets) {
-  try {
-    const lines = textLines(await get(`/event/${ev.value}`))
-    const missing = lines.find((l) => /Missing \d+% of/i.test(l))
-    const slots = parseLiveSlots(lines)
-    parsed.set(ev.value, { ev, slots })
-    console.log(`  ${ev.value.padEnd(34)} ${String(slots.length).padStart(2)} slot(s)${missing ? `  [sisyduck: ${missing.replace(/\s+/g, ' ')}]` : ''}`)
-  } catch (err) {
-    console.log(`  ${ev.value.padEnd(34)} failed: ${err.message}`)
-  }
-  await sleep(DELAY_MS)
-}
-
-// --- fabrication guard -------------------------------------------------------
-// If two different events yield an identical artist set, we are reading page chrome,
-// not a lineup. Refuse the batch.
-const sigs = new Map()
-for (const [key, { slots }] of parsed) {
-  if (!slots.length) continue
-  const sig = slots.map((s) => s.artist).sort().join('|')
-  if (!sigs.has(sig)) sigs.set(sig, [])
-  sigs.get(sig).push(key)
-}
-const bogus = [...sigs.values()].filter((keys) => keys.length > 1).flat()
-if (bogus.length) {
-  console.log(`\nREJECTED: ${bogus.length} events share an identical artist list — that is page`)
-  console.log('chrome, not a lineup. Storing nothing. (Parser needs updating.)')
-  for (const k of bogus.slice(0, 4)) console.log(`  - ${k}`)
-  db.close()
-  process.exit(1)
-}
-
-let nPerfs = 0
-let withTimes = 0
-db.exec('BEGIN')
-for (const [, { ev, slots }] of parsed) {
-  if (!slots.length) continue
-  const eventId = db.prepare('SELECT id FROM events WHERE club_id = ? AND source_event_id = ?').get(clubId, ev.value).id
-  // Never downgrade a richer earlier capture; replace cleanly when this one is fuller.
-  const stored = db.prepare('SELECT COUNT(*) n FROM slots WHERE event_id = ? AND source = ?').get(eventId, SOURCE).n
-  if (slots.length < stored) continue
-  db.prepare('DELETE FROM slots WHERE event_id = ? AND source = ?').run(eventId, SOURCE)
-  slots.forEach((s, k) => {
-    const artistId = upsertArtist(db, { name: s.artist, source: SOURCE })
-    const floorId = upsertFloor(db, clubId, s.floor)
-    const startTime = s.day ? resolveSlot(s.day, s.time, ev.start, ev.end) : null
-    upsertPerformance(db, { eventId, artistId, floorId, startTime, source: SOURCE })
-    // Also store as a timetable slot so event pages render Sisyphos like the others.
-    upsertSlot(db, { eventId, floorId, clock: s.time, startTime, billing: s.artist, collective: '', position: k, source: SOURCE })
-    nPerfs++
-    if (startTime) withTimes++
+// --- lineup: from sisy.fan (the human-maintained upstream) --------------------
+// sisyduck's event pages are an empty client-only SPA, so the actual timetable comes
+// from sisy.fan, which server-renders the whole weekend as five per-stage tables. It
+// shows one event at a time and drops it after the party — hence capture-forward.
+console.log('\nlineup:  reading sisy.fan current timetable…')
+let tt = null
+try {
+  const res = await fetch('https://sisy.fan/', {
+    headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 (berlin-club-dj personal archive)', accept: 'text/html' },
+    signal: AbortSignal.timeout(30_000),
   })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  tt = parseSisyfan(await res.text())
+} catch (err) {
+  console.log(`  sisy.fan fetch/parse failed: ${err.message}`)
 }
-db.exec('COMMIT')
 
-const totalPerfs = db.prepare('SELECT COUNT(*) n FROM performances WHERE source = ?').get(SOURCE).n
-console.log(`\nlineups: +${nPerfs} this run (${withTimes} with a resolved timestamp) · ${totalPerfs} total`)
-console.log('\nSisyphos lineups are published late and incompletely — sisyduck itself reports')
-console.log('missing ~96%. Run this on a cron through each party to accrue what appears.')
+if (!tt || !tt.stages.length) {
+  console.log('  sisy.fan shows no current timetable — nothing to capture this run.')
+} else {
+  const nSlots = tt.stages.reduce((n, s) => n + s.slots.length, 0)
+  console.log(`  "${tt.title}" ${tt.startDate}→${tt.endDate}: ${tt.stages.length} stages, ${nSlots} slots`)
+
+  // Match to the event list by start date; if sisy.fan is ahead of sisyduck, store it anyway.
+  const match = events.find((e) => e.start.slice(0, 10) === tt.startDate)
+  const startISO = match ? match.start : `${tt.startDate}T22:00:00+02:00`
+  const endISO = match ? match.end : `${tt.endDate}T10:00:00+02:00`
+  const eventId = match
+    ? db.prepare('SELECT id FROM events WHERE club_id = ? AND source_event_id = ?').get(clubId, match.value).id
+    : upsertEvent(db, { clubId, sourceEventId: `sisyfan-${tt.startDate}`, title: tt.title, isoDate: tt.startDate, endDate: tt.endDate, url: 'https://sisy.fan/', source: SOURCE })
+
+  // Never downgrade a richer earlier capture; replace cleanly when this one is at least as full.
+  const stored = db.prepare('SELECT COUNT(*) n FROM slots WHERE event_id = ? AND source = ?').get(eventId, SOURCE).n
+  if (nSlots < stored) {
+    console.log(`  kept richer earlier capture (${stored} ≥ ${nSlots} slots) — nothing changed.`)
+  } else {
+    let stored2 = 0
+    let withTimes = 0
+    db.exec('BEGIN')
+    db.prepare('DELETE FROM slots WHERE event_id = ? AND source = ?').run(eventId, SOURCE)
+    db.prepare('DELETE FROM performances WHERE event_id = ? AND source = ?').run(eventId, SOURCE)
+    for (const stage of tt.stages) {
+      const floorId = upsertFloor(db, clubId, stage.name)
+      stage.slots.forEach((slot, k) => {
+        const startTime = resolveSlot(slot.day, slot.time, startISO, endISO)
+        upsertSlot(db, { eventId, floorId, clock: slot.time, startTime, billing: slot.artist, collective: '', position: k, source: SOURCE })
+        // Link each named DJ (splits "SPF 50 b2b Albert") to their page.
+        for (const name of splitBilling(slot.artist)) {
+          const artistId = upsertArtist(db, { name, source: SOURCE })
+          upsertPerformance(db, { eventId, artistId, floorId, startTime, source: SOURCE })
+        }
+        stored2++
+        if (startTime) withTimes++
+      })
+    }
+    db.exec('COMMIT')
+    console.log(`  stored ${stored2} slots (${withTimes} timed) across ${tt.stages.length} stages.`)
+  }
+}
+
+const totalSlots = db.prepare('SELECT COUNT(*) n FROM slots WHERE source = ?').get(SOURCE).n
+console.log(`\nSisyphos slots total: ${totalSlots}`)
+console.log('sisy.fan shows one event at a time and removes it after the party — run this on a')
+console.log('schedule through each weekend to accrue the archive.')
 
 db.close()
 console.log('\nDone.')

@@ -12,6 +12,11 @@ const DIST = join(ROOT, 'dist')
 const db = openDb()
 const t0 = Date.now()
 
+// Cache-busting token. Static hosts (and browsers) cache style.css / app.js / search.json
+// aggressively; without a version query, an updated site keeps serving stale assets. This
+// changes every build, so each deploy forces fresh assets.
+const BUILD = t0.toString(36)
+
 const esc = (s) =>
   String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -53,7 +58,6 @@ function layout({ title, body, active = '', depth = 0, description = '' }) {
     ['', 'Nights'],
     ['artists', 'DJs'],
     ['stats', 'Stats'],
-    ['about', 'Sources'],
   ]
   return `<!doctype html>
 <html lang="en">
@@ -62,8 +66,9 @@ function layout({ title, body, active = '', depth = 0, description = '' }) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 ${description ? `<meta name="description" content="${esc(description)}">` : ''}
-<link rel="stylesheet" href="${root}/style.css">
+<link rel="stylesheet" href="${root}/style.css?v=${BUILD}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><rect x='6' y='3' width='4' height='10' fill='%23fff'/></svg>">
+<script>window.__V=${JSON.stringify(BUILD)}</script>
 </head>
 <body>
 <header class="top">
@@ -74,16 +79,20 @@ ${description ? `<meta name="description" content="${esc(description)}">` : ''}
 </header>
 <main>${body}</main>
 <footer>
-  <p class="foot-title">Sources</p>
+  ${
+    active === 'index'
+      ? `<p class="foot-title">Sources</p>
   <ul class="foot-src">
     <li><strong>Berghain lineups</strong> — <a href="https://berghain.ravers.workers.dev">berghain.ravers.workers.dev</a> by JPHFA, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Built from official monthly flyers (2004&ndash;2009) and berghain.berlin listings (2009+).</li>
     <li><strong>Berghain set times</strong> — official event pages at <a href="https://www.berghain.berlin/en/program/">berghain.berlin</a>.</li>
-    <li><strong>Sisyphos</strong> — <a href="https://sisyduck.com">sisyduck.com</a> (unofficial), upstream <a href="https://sisy.fan">sisy.fan</a>.</li>
+    <li><strong>Sisyphos</strong> — <a href="https://sisy.fan">sisy.fan</a> (unofficial), event list via <a href="https://sisyduck.com">sisyduck.com</a>.</li>
     <li><strong>Tresor</strong> — official listing at <a href="https://tresorberlin.com/club/events/">tresorberlin.com</a>.</li>
-  </ul>
-  <p class="foot-note">Unofficial personal archive. Not affiliated with any club. <a href="${root}/about.html">Full sources &amp; method →</a></p>
+  </ul>`
+      : ''
+  }
+  <p class="foot-note">Unofficial personal archive. Not affiliated with any club.</p>
 </footer>
-<script src="${root}/app.js" defer></script>
+<script src="${root}/app.js?v=${BUILD}" defer></script>
 </body>
 </html>`
 }
@@ -308,7 +317,7 @@ for (const a of artists) {
     <li><b>${fmtDate(a.first_night)}</b><span>first</span></li>
     <li><b>${fmtDate(a.last_night)}</b><span>latest</span></li>
   </ul>
-  ${anyTime ? '' : `<p class="note">Some nights show no set time: it depends on whether a timetable was published for that night. <a href="../about.html">Why?</a></p>`}
+  ${anyTime ? '' : `<p class="note">Some nights show no set time: it depends on whether a timetable was published for that night.</p>`}
   ${rows}
 </article>`,
     })
@@ -406,8 +415,7 @@ ${[...eventsByYear.entries()]
   </section>`
   )
   .join('')}
-</div>
-${hidden ? `<p class="hint">${hidden.toLocaleString('en')} further night${hidden === 1 ? '' : 's'} (mostly Sisyphos) have no published lineup and are not listed.</p>` : ''}`,
+</div>`,
   })
 )
 
@@ -419,10 +427,6 @@ const perYear = db
   )
   .all()
 const maxYear = Math.max(...perYear.map((r) => r.sets), 1)
-const floorSplit = db
-  .prepare(`SELECT f.name, COUNT(*) AS n FROM performances p JOIN floors f ON f.id = p.floor_id GROUP BY f.id ORDER BY n DESC`)
-  .all()
-const totalFloor = floorSplit.reduce((n, f) => n + f.n, 0)
 const timedEvents = db.prepare('SELECT COUNT(DISTINCT event_id) n FROM slots').get().n
 
 writeFileSync(
@@ -454,63 +458,7 @@ writeFileSync(
       .join('')}
   </ol>
   <p class="hint">2020&ndash;2021 reflects the pandemic closure. Future-dated nights are already-announced lineups.</p>
-</section>
-<section>
-  <h2>Floors</h2>
-  <ul class="rows">
-    ${floorSplit
-      .map((f) => `<li><span class="name">${esc(f.name)}</span><span class="bar" style="--w:${(f.n / totalFloor) * 100}%"></span><span class="count">${f.n.toLocaleString('en')}</span></li>`)
-      .join('')}
-  </ul>
-  <p class="hint">${timedEvents.toLocaleString('en')} nights have a captured set-time timetable.</p>
 </section>`,
-  })
-)
-
-// --- about / sources -------------------------------------------------------
-const sources = db.prepare('SELECT * FROM sources ORDER BY name').all()
-writeFileSync(
-  join(DIST, 'about.html'),
-  layout({
-    title: 'Sources & method — Berlin Club DJ',
-    active: 'about',
-    body: `
-<h1>Sources &amp; method</h1>
-<p class="prose">This is a personal archive of who played at Berghain Klubnacht and Sisyphos. The database is the point; this site is a viewer over it. Everything here comes from the sources below &mdash; nothing is invented, and where a lineup or set time was never published, it is left blank rather than guessed.</p>
-
-<h2>Where the data comes from</h2>
-<ul class="src-list">
-  <li>
-    <h3>Berghain lineups — <a href="https://berghain.ravers.workers.dev">berghain.ravers.workers.dev</a></h3>
-    <p>A complete Klubnacht archive since opening night, 18 December 2004, built by JPHFA from official monthly flyers (2004&ndash;2009, cross-checked against the original PDFs) and berghain.berlin listings (2009 onward). Licensed <a href="https://creativecommons.org/licenses/by/4.0/"><strong>CC BY 4.0</strong></a> — this archive is used and redistributed under that licence, with attribution.</p>
-  </li>
-  <li>
-    <h3>Berghain set times — <a href="https://www.berghain.berlin/en/program/">berghain.berlin</a></h3>
-    <p>The official event pages publish the full per-stage timetable — set times, the Säule and summer Garten stages, and each DJ's label. The archive API strips these, so they are read directly from the event pages, which retain them for past nights too.</p>
-  </li>
-  <li>
-    <h3>Sisyphos — <a href="https://sisyduck.com">sisyduck.com</a> (upstream <a href="https://sisy.fan">sisy.fan</a>)</h3>
-    <p>Unofficial and undocumented. Sisyphos does not announce lineups in advance by design, so its timetable is human-maintained, appears late (typically Friday night into Saturday), and is removed after the party. Events are recorded as history; lineups are captured forward as they appear. Coverage will always be sparse — that is the club, not a gap in the tool.</p>
-  </li>
-  <li>
-    <h3>Tresor — <a href="https://tresorberlin.com/club/events/">tresorberlin.com</a></h3>
-    <p>The official site, with no public API or licence. The events listing shows upcoming nights with per-floor lineups, and each event page adds set-time ranges. Pages roll off after the event, so — like Sisyphos — Tresor is captured forward on a schedule rather than backfilled.</p>
-  </li>
-</ul>
-
-<h2>Two honest limits</h2>
-<p class="prose"><strong>Set times exist only where a timetable was published.</strong> Berghain nights from before timetables were posted, and most Sisyphos nights, show the lineup without times — or no lineup at all. Nights with no published lineup are not listed on the <a href="index.html">Nights</a> page.</p>
-<p class="prose"><strong>Counts run marginally below the upstream Berghain site</strong> because a few artists are billed twice on one floor at one event with no set times to tell the rows apart; those are counted once.</p>
-
-<h2>Source records</h2>
-<ul class="rows">
-  ${sources
-    .map(
-      (s) => `<li><span class="name"><a href="${esc(s.url)}">${esc(s.name)}</a></span><span class="muted">${esc(s.license ?? 'unknown')}</span><span class="muted">${s.fetched_at ? 'fetched ' + s.fetched_at.slice(0, 10) : ''}</span></li>`
-    )
-    .join('')}
-</ul>
-<p class="foot-note">Unofficial personal archive. Not affiliated with Berghain, Sisyphos, or any club or label named here.</p>`,
   })
 )
 
