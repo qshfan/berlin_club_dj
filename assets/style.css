@@ -108,8 +108,14 @@ footer a { text-decoration: underline; text-underline-offset: 2px; }
 .rows .num { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 6.5em; }
 .rows .count { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; }
 .rows .rank { font-family: var(--mono); font-size: 11px; color: var(--dim); min-width: 2em; }
-.rows .bar { height: 3px; background: var(--fg); width: var(--w); max-width: 34%; opacity: 0.28; border-radius: 2px; }
-.ranked li > a:hover .bar { opacity: 0.6; }
+/* Bar is a fixed-width track with a proportional fill, so it never competes with the
+   name column for flex space (which collapsed .name to a single character). */
+.rows .bar { flex: 0 0 clamp(40px, 16%, 140px); height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.rows .bar::after { content: ''; display: block; height: 100%; width: var(--w); background: var(--fg); opacity: 0.45; border-radius: 2px; }
+.ranked li > a:hover .bar::after { opacity: 0.75; }
+/* .rows li sets display:flex, which overrides the UA [hidden] rule — restore it so the
+   nights club filter (which toggles li.hidden) actually hides rows. */
+.rows li[hidden] { display: none; }
 .rows .yrs { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 
 /* ---------- club tags ---------- */
@@ -120,6 +126,26 @@ footer a { text-decoration: underline; text-underline-offset: 2px; }
 .club--berghain { color: var(--berghain); }
 .club--sisyphos { color: var(--sisyphos); }
 .club--tresor { color: var(--tresor); }
+
+/* ---------- DJs page: filters ---------- */
+.hero--tight { margin-bottom: 1.25rem; }
+.filters { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.6rem; }
+.filter { display: flex; flex-direction: column; gap: 0.3rem; }
+.filter--grow { flex: 1 1 240px; }
+.filter label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+.filter select,
+.filters input[type='search'] {
+  font: inherit; padding: 0.6rem 0.7rem; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 2px; width: 100%;
+}
+.filter select { cursor: pointer; min-width: 8em; }
+.filters input[type='search']:focus,
+.filter select:focus { outline: 2px solid var(--fg); outline-offset: -1px; }
+.reset {
+  font: inherit; font-size: 12px; padding: 0.6rem 0.9rem; background: transparent;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 2px; cursor: pointer;
+}
+.reset:hover { color: var(--fg); border-color: var(--fg); }
 
 /* ---------- nights: tabs filter ---------- */
 .tabs { display: flex; gap: 0.5rem; margin: 0 0 2rem; flex-wrap: wrap; }

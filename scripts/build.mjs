@@ -50,8 +50,8 @@ const floorRank = (name) => {
 function layout({ title, body, active = '', depth = 0, description = '' }) {
   const root = depth === 0 ? '.' : '..'
   const nav = [
-    ['', 'Index'],
-    ['events', 'Nights'],
+    ['', 'Nights'],
+    ['artists', 'DJs'],
     ['stats', 'Stats'],
     ['about', 'Sources'],
   ]
@@ -149,6 +149,12 @@ for (const p of db
   perfByArtist.get(p.artist_id).push(p)
 }
 
+// Which clubs each artist has played — powers the club filter on the DJs page.
+const clubsByArtist = new Map()
+for (const [artistId, perfs] of perfByArtist) {
+  clubsByArtist.set(artistId, [...new Set(perfs.map((p) => clubById.get(p.club_id)?.slug).filter(Boolean))])
+}
+
 // Link a billing string to artist page(s): whole if the archive knows it, else split.
 function linkBilling(billing) {
   const wholeSlug = slugify(billing)
@@ -203,27 +209,49 @@ mkdirSync(join(DIST, 'event'), { recursive: true })
 
 const totalSets = artists.reduce((n, a) => n + a.sets, 0)
 
-// --- index -----------------------------------------------------------------
+// --- DJs (search + filters) ------------------------------------------------
+const djMinYear = Math.min(...artists.map((a) => Number(a.first_night.slice(0, 4))))
+const djMaxYear = Math.max(...artists.map((a) => Number(a.last_night.slice(0, 4))))
+const yearOptions = (sel) =>
+  Array.from({ length: djMaxYear - djMinYear + 1 }, (_, i) => djMinYear + i)
+    .map((y) => `<option value="${y}"${y === sel ? ' selected' : ''}>${y}</option>`)
+    .join('')
+
 writeFileSync(
-  join(DIST, 'index.html'),
+  join(DIST, 'artists.html'),
   layout({
-    title: 'Berlin Club DJ — who played Berghain & Sisyphos',
-    active: 'index',
-    description: 'A searchable archive of every DJ billed at Berghain Klubnacht and Sisyphos.',
+    title: 'The DJs — Berlin Club DJ',
+    active: 'artists',
+    description: 'Search every DJ billed at Berghain Klubnacht, Sisyphos, and Tresor — filter by club and year.',
     body: `
 <section class="hero">
-  <h1>Who played<br>in Berlin</h1>
-  <p class="lede">A personal archive of every DJ billed at <strong>Berghain Klubnacht</strong> since opening night in 2004, and at <strong>Sisyphos</strong>.</p>
-  <ul class="counts">
-    <li><b>${artists.length.toLocaleString('en')}</b><span>artists</span></li>
-    <li><b>${totalSets.toLocaleString('en')}</b><span>sets</span></li>
-    <li><b>${events.length.toLocaleString('en')}</b><span>nights</span></li>
-  </ul>
+  <h1>The DJs</h1>
+  <p class="lede">Every DJ billed at <strong>Berghain Klubnacht</strong> since opening night in 2004, at <strong>Sisyphos</strong>, and at <strong>Tresor</strong> — ${artists.length.toLocaleString('en')} names across ${totalSets.toLocaleString('en')} sets. Search a name, or filter by club and years.</p>
 </section>
 <section class="search">
-  <label class="sr-only" for="q">Search artists</label>
-  <input id="q" type="search" placeholder="Search ${artists.length.toLocaleString('en')} artists…" autocomplete="off" autofocus spellcheck="false">
-  <p class="hint" id="hint">Type to filter. Sorted by number of sets played.</p>
+  <div class="filters">
+    <div class="filter filter--grow">
+      <label class="sr-only" for="q">Search DJs</label>
+      <input id="q" type="search" placeholder="Search ${artists.length.toLocaleString('en')} DJs…" autocomplete="off" autofocus spellcheck="false">
+    </div>
+    <div class="filter">
+      <label for="club">Club</label>
+      <select id="club">
+        <option value="all">All clubs</option>
+        ${clubs.map((c) => `<option value="${c.slug}">${esc(c.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="filter">
+      <label for="from">From</label>
+      <select id="from">${yearOptions(djMinYear)}</select>
+    </div>
+    <div class="filter">
+      <label for="to">To</label>
+      <select id="to">${yearOptions(djMaxYear)}</select>
+    </div>
+    <button id="reset" type="button" class="reset" hidden>Reset</button>
+  </div>
+  <p class="hint" id="hint">Sorted by number of sets played.</p>
   <ol id="results" class="rows"></ol>
   <p id="more" class="more"></p>
 </section>`,
@@ -273,7 +301,7 @@ for (const a of artists) {
       description: `Every set ${a.name} played at Berghain and Sisyphos.`,
       body: `
 <article class="artist">
-  <p class="crumb"><a href="../">← All artists</a></p>
+  <p class="crumb"><a href="../artists.html">← All DJs</a></p>
   <h1>${esc(a.name)}</h1>
   <ul class="counts counts--sm">
     <li><b>${a.sets}</b><span>set${a.sets === 1 ? '' : 's'}</span></li>
@@ -317,7 +345,7 @@ for (const ev of events) {
       description: `Lineup for ${ev.title} at ${clubById.get(ev.club_id)?.name} on ${fmtDate(ev.iso_date)}.`,
       body: `
 <article class="event">
-  <p class="crumb"><a href="../events.html">← All nights</a></p>
+  <p class="crumb"><a href="../">← All nights</a></p>
   <h1>${esc(ev.title)}</h1>
   <p class="subhead">${clubTag(ev.club_id)} <span class="muted">${weekday(ev.iso_date)} ${fmtDate(ev.iso_date)}${groups.length ? ` · ${groups.reduce((n, g) => n + g.rows.length, 0)} sets across ${groups.length} floor${groups.length === 1 ? '' : 's'}` : ''}</span></p>
   ${ev.url ? `<p><a class="ext" href="${esc(ev.url)}">Source listing ↗</a></p>` : ''}
@@ -341,15 +369,18 @@ const perClubCount = clubs
   .join(' · ')
 
 writeFileSync(
-  join(DIST, 'events.html'),
+  join(DIST, 'index.html'),
   layout({
-    title: 'Nights — Berlin Club DJ',
-    active: 'events',
+    title: 'Berlin Club Nights',
+    active: 'index',
+    description: 'Every night at Berghain Klubnacht, Sisyphos, and Tresor — pick a club and open a night for the full per-stage lineup.',
     body: `
-<h1>Nights</h1>
-<p class="lede">${listed.length.toLocaleString('en')} nights with a published lineup. <span class="muted">${perClubCount}</span></p>
+<section class="hero hero--tight">
+  <h1>Berlin Club<br>Nights</h1>
+  <p class="lede">${listed.length.toLocaleString('en')} nights with a published lineup at <strong>Berghain</strong>, <strong>Sisyphos</strong>, and <strong>Tresor</strong>. Pick a club, open a night for the full per-stage lineup. <span class="muted">${perClubCount}</span></p>
+</section>
 
-<div class="tabs" role="tablist">
+<div class="tabs" role="tablist" aria-label="Filter nights by club">
   <button class="tab" data-club="all" aria-selected="true">All</button>
   ${clubs.map((c) => `<button class="tab" data-club="${c.slug}" aria-selected="false">${esc(c.name)}</button>`).join('')}
 </div>
@@ -468,7 +499,7 @@ writeFileSync(
 </ul>
 
 <h2>Two honest limits</h2>
-<p class="prose"><strong>Set times exist only where a timetable was published.</strong> Berghain nights from before timetables were posted, and most Sisyphos nights, show the lineup without times — or no lineup at all. Nights with no published lineup are not listed on the <a href="events.html">Nights</a> page.</p>
+<p class="prose"><strong>Set times exist only where a timetable was published.</strong> Berghain nights from before timetables were posted, and most Sisyphos nights, show the lineup without times — or no lineup at all. Nights with no published lineup are not listed on the <a href="index.html">Nights</a> page.</p>
 <p class="prose"><strong>Counts run marginally below the upstream Berghain site</strong> because a few artists are billed twice on one floor at one event with no set times to tell the rows apart; those are counted once.</p>
 
 <h2>Source records</h2>
@@ -488,7 +519,16 @@ writeFileSync(
   join(DIST, 'search.json'),
   JSON.stringify({
     generated: new Date().toISOString(),
-    artists: artists.map((a) => [a.name, a.slug, a.sets, Number(a.first_night.slice(0, 4)), Number(a.last_night.slice(0, 4))]),
+    clubs: clubs.map((c) => [c.slug, c.name]),
+    // [name, slug, sets, firstYear, lastYear, clubSlugs[]]
+    artists: artists.map((a) => [
+      a.name,
+      a.slug,
+      a.sets,
+      Number(a.first_night.slice(0, 4)),
+      Number(a.last_night.slice(0, 4)),
+      clubsByArtist.get(a.id) ?? [],
+    ]),
   })
 )
 
