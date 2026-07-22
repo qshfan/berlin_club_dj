@@ -8,9 +8,13 @@
     "node": ">=22"
   },
   "scripts": {
-    "ingest": "npm run ingest:berghain && npm run ingest:sisyphos",
+    "ingest": "npm run ingest:berghain && npm run ingest:berghain:times && npm run ingest:sisyphos && npm run ingest:tresor",
     "ingest:berghain": "node scripts/ingest-berghain.mjs",
+    "ingest:berghain:times": "node scripts/ingest-berghain-times.mjs",
     "ingest:sisyphos": "node scripts/ingest-sisyphos.mjs",
+    "ingest:tresor": "node scripts/ingest-tresor.mjs",
+    "capture": "node scripts/orchestrate.mjs",
+    "capture:full": "node scripts/orchestrate.mjs --full",
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
     "stats": "node scripts/stats.mjs"

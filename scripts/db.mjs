@@ -61,11 +61,29 @@ CREATE TABLE IF NOT EXISTS performances (
   UNIQUE(event_id, artist_id, floor_id)
 );
 
+-- The published per-stage timetable: one row per printed slot, keeping the billing
+-- string verbatim ("Fiedel B2B DJ Pete") plus the DJ's label/collective. This is the
+-- richest lineup form and what event pages render. Sourced from berghain.berlin event
+-- pages and sisy.fan — neither of which the CC BY archive API exposes.
+CREATE TABLE IF NOT EXISTS slots (
+  id         INTEGER PRIMARY KEY,
+  event_id   INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  floor_id   INTEGER REFERENCES floors(id),
+  clock      TEXT,               -- "04:30" as published, club-local
+  start_time TEXT,               -- resolved absolute instant (UTC ISO)
+  billing    TEXT NOT NULL,      -- full printed billing, incl. B2B / live
+  collective TEXT,               -- label/party under the name, when given
+  position   INTEGER,            -- printed order within the stage
+  source     TEXT NOT NULL,
+  UNIQUE(event_id, floor_id, clock, billing)
+);
+
 CREATE INDEX IF NOT EXISTS idx_perf_artist ON performances(artist_id);
 CREATE INDEX IF NOT EXISTS idx_perf_event  ON performances(event_id);
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(iso_date);
 CREATE INDEX IF NOT EXISTS idx_events_club ON events(club_id);
 CREATE INDEX IF NOT EXISTS idx_artists_slug ON artists(slug);
+CREATE INDEX IF NOT EXISTS idx_slots_event ON slots(event_id);
 `
 
 export function openDb() {
@@ -73,6 +91,7 @@ export function openDb() {
   const db = new DatabaseSync(DB_PATH)
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
+  db.exec('PRAGMA busy_timeout = 15000') // let concurrent ingesters/orchestrator serialize
   db.exec(SCHEMA)
   return db
 }
@@ -134,4 +153,23 @@ export function upsertPerformance(db, { eventId, artistId, floorId, startTime, e
      ON CONFLICT(event_id, artist_id, floor_id) DO UPDATE SET
        start_time=excluded.start_time, end_time=excluded.end_time`
   ).run(eventId, artistId, floorId ?? null, startTime ?? null, endTime ?? null, source)
+}
+
+export function upsertSlot(db, { eventId, floorId, clock, startTime, billing, collective, position, source }) {
+  db.prepare(
+    `INSERT INTO slots (event_id, floor_id, clock, start_time, billing, collective, position, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(event_id, floor_id, clock, billing) DO UPDATE SET
+       start_time=excluded.start_time, collective=excluded.collective, position=excluded.position`
+  ).run(eventId, floorId ?? null, clock ?? null, startTime ?? null, billing, collective || null, position ?? null, source)
+}
+
+// Split a billing string into the individual DJs it names, so a B2B or joint set
+// links to each artist's page. "Fiedel B2B DJ Pete", "Marcel Dettmann & Ben Klock",
+// "Voices from the Lake feat Donato Dozzy & Neel" -> component names.
+export function splitBilling(billing) {
+  return billing
+    .split(/\s+(?:B2B|b2b|vs\.?|&|\+|x|feat\.?|featuring|,)\s+/i)
+    .map((s) => s.trim())
+    .filter((s) => s && !/^(live|dj set|all night long)$/i.test(s))
 }

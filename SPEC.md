@@ -1,12 +1,36 @@
 # Berlin Club DJ Database — Spec
 
-A personal, queryable archive of who played at **Berghain Klubnacht** and **Sisyphos**.
+A personal, queryable archive of who played at **Berghain Klubnacht**, **Sisyphos**, and
+**Tresor** — which DJ, which night, which floor, and (where published) at which hour.
 
 ## 1. Motivation
 
 The goal is a database first, a website second. The site is a viewer over the data.
 Everything is designed so the SQLite file is the artifact worth keeping — the HTML is
 disposable and regenerable.
+
+## 1a. What changed after v1 (per-stage timetables, a third club, a capture pipeline)
+
+Three things were added once the first version worked, and each is reflected in the
+sections below:
+
+1. **Set times per stage.** The CC BY archive API has no set times — but the official
+   berghain.berlin *event pages* carry the full per-stage timetable and keep it for past
+   nights too (verified to 2012). A `slots` table now stores that printed timetable
+   verbatim (billing string, clock, label), and the times are matched back onto the
+   archive's performance rows so artist pages show when each DJ played. B2B billings link
+   to each artist. This is richer data than the API exposes and is the source of the
+   per-stage timetable on every event page.
+
+2. **Tresor** as a third club. No API, no archive, no licence — the official listing
+   shows upcoming events with per-floor lineups, and each event page adds set-time ranges.
+   Capture-forward, like Sisyphos. It is an adapter, not a schema change, because the
+   model was club-agnostic from the start.
+
+3. **A capture orchestrator.** Sisyphos and Tresor lineups are human-maintained, appear
+   late, and are removed after the party. `scripts/orchestrate.mjs` runs the ephemeral
+   ingesters, logs a per-source delta, and is scheduled across the weekend so nothing is
+   lost. See §5a.
 
 ## 2. Research findings (this drove every decision below)
 
@@ -96,16 +120,24 @@ Club-agnostic from the start, so a third venue is an adapter and not a migration
 
 ```
 clubs         id, slug, name
-artists       id, slug, name, canonical_name
-events        id, club_id, source_event_id, title, iso_date, url, source
-floors        id, club_id, name                  -- Berghain / Panorama Bar / Hammahalle …
+artists       id, slug, name, source, source_artist_id
+events        id, club_id, source_event_id, title, iso_date, end_date, url, source
+floors        id, club_id, name                  -- Berghain / Panorama Bar / Tresor / Hammahalle …
 performances  id, event_id, artist_id, floor_id, start_time, end_time, source
-sources       id, name, url, license, fetched_at -- provenance + attribution
+slots         id, event_id, floor_id, clock, start_time, billing, collective, position, source
+sources       id, name, url, license, attribution, fetched_at
 ```
 
 Rules:
 
-- `performances` is the grain: one row = one artist on one floor at one event.
+- `performances` is the grain for artist-centric views: one row = one artist on one floor
+  at one event. `slots` is the grain for event-centric views: one row = one printed
+  timetable line, keeping the billing verbatim ("Fiedel B2B DJ Pete") plus clock and label.
+  A B2B billing is one `slots` row but links to several artists (whole-match against the
+  archive first, split only when there is no whole match, so duos like "Blasha & Allatt"
+  stay intact while true B2Bs split).
+- Event pages render from `slots` when present, else fall back to the flat `performances`
+  lineup. Nights with neither are treated as having no published lineup and are hidden.
 - Every row carries `source`, so mixed-provenance data stays auditable and a bad source can
   be deleted with one `DELETE WHERE source = ?`.
 - Ingest is **idempotent**: `UNIQUE(event_id, artist_id, floor_id)` + upsert. Re-running is
@@ -159,12 +191,31 @@ npm run stats              # print DB summary to the terminal
 Data refresh is a cron running the ingest + build and redeploying. Nothing needs a
 runtime, a container, or a cluster.
 
-## 8. Attribution (required, not optional)
+## 5a. Capture orchestrator (the ephemeral sources)
 
-Berghain data is CC BY 4.0 and **must** credit
-[berghain.ravers.workers.dev](https://berghain.ravers.workers.dev). This appears in the site
-footer, on `/stats`, and in the `sources` table. Do not remove it — it is the license
-condition under which this data may be used at all.
+Sisyphos and Tresor lineups are human-maintained, published late (Sisyphos typically
+Friday night into Saturday), and removed after the party. Missing the window loses the
+data permanently. `scripts/orchestrate.mjs` is the pipeline runner: it executes the
+ingesters in order, snapshots per-source slot counts before and after, appends a
+machine-readable record to `data/capture.log`, and never lets one failing source abort
+the others. It is scheduled across the weekend by
+[.github/workflows/capture.yml](.github/workflows/capture.yml), which commits whatever it
+caught back to the repo. `npm run capture` locally does the same. Because every ingester
+is idempotent, running it every 30 minutes through a weekend is safe and simply accretes.
+
+## 8. Sources & attribution (required, not optional)
+
+All sources are listed in the site footer and on the dedicated `/about` (Sources) page.
+
+- **Berghain lineups** — [berghain.ravers.workers.dev](https://berghain.ravers.workers.dev),
+  **CC BY 4.0**, and the attribution **must** be shown (footer, Sources page, `sources`
+  table). It is the licence condition under which the data may be used at all.
+- **Berghain set times** — official event pages at berghain.berlin.
+- **Sisyphos** — sisyduck.com / sisy.fan (unofficial, unlicensed).
+- **Tresor** — tresorberlin.com (official site, no licence).
+
+The unofficial sources are scraped politely, cached, and each isolated behind a single
+adapter so any one can be swapped or dropped without touching the rest.
 
 ## 9. Non-goals
 

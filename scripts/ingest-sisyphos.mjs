@@ -23,7 +23,7 @@
 // cron through a party and the archive accrues the slots that were genuinely published.
 // It will stay sparse. That is the truth about this club, not a bug to fix.
 
-import { openDb, upsertClub, upsertSource, upsertArtist, upsertEvent, upsertFloor, upsertPerformance } from './db.mjs'
+import { openDb, upsertClub, upsertSource, upsertArtist, upsertEvent, upsertFloor, upsertPerformance, upsertSlot } from './db.mjs'
 
 const BASE = 'https://sisyduck.com'
 const SOURCE = 'sisyduck.com'
@@ -178,14 +178,20 @@ db.exec('BEGIN')
 for (const [, { ev, slots }] of parsed) {
   if (!slots.length) continue
   const eventId = db.prepare('SELECT id FROM events WHERE club_id = ? AND source_event_id = ?').get(clubId, ev.value).id
-  for (const s of slots) {
+  // Never downgrade a richer earlier capture; replace cleanly when this one is fuller.
+  const stored = db.prepare('SELECT COUNT(*) n FROM slots WHERE event_id = ? AND source = ?').get(eventId, SOURCE).n
+  if (slots.length < stored) continue
+  db.prepare('DELETE FROM slots WHERE event_id = ? AND source = ?').run(eventId, SOURCE)
+  slots.forEach((s, k) => {
     const artistId = upsertArtist(db, { name: s.artist, source: SOURCE })
     const floorId = upsertFloor(db, clubId, s.floor)
     const startTime = s.day ? resolveSlot(s.day, s.time, ev.start, ev.end) : null
     upsertPerformance(db, { eventId, artistId, floorId, startTime, source: SOURCE })
+    // Also store as a timetable slot so event pages render Sisyphos like the others.
+    upsertSlot(db, { eventId, floorId, clock: s.time, startTime, billing: s.artist, collective: '', position: k, source: SOURCE })
     nPerfs++
     if (startTime) withTimes++
-  }
+  })
 }
 db.exec('COMMIT')
 

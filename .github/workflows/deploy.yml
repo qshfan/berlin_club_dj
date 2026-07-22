@@ -28,10 +28,11 @@ jobs:
           node-version: 22
 
       # Only refresh from upstream on the cron / manual run. Push builds use the
-      # committed data/berlin.db so a docs typo doesn't trigger a 2.5k-request crawl.
+      # committed data/berlin.db so a docs typo doesn't trigger a full re-crawl.
+      # Incremental: Berghain archive + set-time enrichment touch only what changed.
       - name: Refresh data
         if: github.event_name != 'push'
-        run: npm run ingest
+        run: npm run capture -- --full --no-build
 
       - run: npm run build
 

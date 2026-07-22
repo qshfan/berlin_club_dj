@@ -1,0 +1,46 @@
+name: capture ephemeral lineups
+
+# Sisyphos and Tresor publish lineups late and remove them after the party. This polls
+# through the weekend window (times are UTC; Berlin is +1/+2) to catch them before they
+# vanish, then commits the updated database so nothing is lost.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * 5'   # Fri 20:00 UTC — Sisyphos lineups start landing
+    - cron: '0 23 * * 5'   # Fri 23:00 UTC
+    - cron: '0 8 * * 6'    # Sat 08:00 UTC
+    - cron: '0 14 * * 6'   # Sat 14:00 UTC
+    - cron: '0 20 * * 6'   # Sat 20:00 UTC
+    - cron: '0 10 * * 0'   # Sun 10:00 UTC
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Capture ephemeral lineups (Sisyphos + Tresor)
+        run: npm run capture -- --no-build
+
+      - name: Commit any newly captured data
+        run: |
+          git config user.name  "capture-bot"
+          git config user.email "actions@github.com"
+          if ! git diff --quiet -- data/; then
+            git add data/berlin.db data/capture.log
+            git commit -m "capture: lineups as of $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          else
+            echo "nothing new captured this run"
+          fi

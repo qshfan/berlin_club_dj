@@ -1,6 +1,7 @@
 # Berlin Club DJ
 
-A personal archive of who played at **Berghain Klubnacht** and **Sisyphos**.
+A personal archive of who played at **Berghain Klubnacht**, **Sisyphos**, and
+**Tresor** — which DJ, which night, which floor, and (where published) at which hour.
 
 The SQLite file is the point. The website is a viewer over it.
 
@@ -13,13 +14,25 @@ No dependencies. No `npm install`. Node ≥ 22 only — it uses the built-in
 
 ## What's in it
 
-| | Nights | Sets | Set times |
-| --- | --- | --- | --- |
-| **Berghain** (Klubnacht, since opening night 18.12.2004) | 1,052 | 13,519 | none — see below |
-| **Sisyphos** (since Dec 2023) | 89 | grows forward | yes, when published |
+| | Coverage | Set times |
+| --- | --- | --- |
+| **Berghain** (Klubnacht, since opening night 18.12.2004) | full archive, 1,052 nights | yes — backfilled from official event pages |
+| **Sisyphos** (since Dec 2023) | events + capture-forward lineups | yes, when published (rare) |
+| **Tresor** (upcoming) | capture-forward lineups | yes, time ranges |
 
-2,540 artists. Marcel Dettmann and Ben Klock lead at ~200 sets each, both from
-opening night onward.
+2,500+ artists. On the **Nights** page you pick a club and open a night to see the
+full per-stage timetable — Berghain / Panorama Bar / Garten, Tresor / Globus, and so
+on — with each DJ's set time and label. Nights with no published lineup are not listed.
+
+### Set times — the part that took real work
+
+Berghain's public lineup API strips set times. But the **official event pages keep the
+full per-stage timetable, and keep it for past nights too** (verified back to 2012). So
+times are read straight from those pages and matched onto the archive — including B2B
+billings, which link to each artist. This is genuinely richer data than the API exposes.
+
+Where a night never had a published timetable, the hour is left blank rather than
+invented.
 
 ## Read this before you trust a number
 
@@ -43,17 +56,36 @@ count distinct sets. Deliberate, not drift. See [SPEC.md](SPEC.md).
 ## Commands
 
 ```
-npm run ingest            # both sources
-npm run ingest:berghain   # ~4 min cold, seconds when warm (incremental)
-npm run ingest:sisyphos   # add --all-events to sweep past events too
-npm run build             # → dist/
-npm run dev               # build + serve + watch
-npm run stats             # database summary in the terminal
+npm run ingest                 # all sources, in order
+npm run ingest:berghain        # lineup archive — ~4 min cold, seconds when warm
+npm run ingest:berghain:times  # set times from official event pages (~20 min cold)
+npm run ingest:sisyphos        # capture-forward; --all-events to sweep past events
+npm run ingest:tresor          # capture-forward, upcoming events with time ranges
+npm run capture                # orchestrated capture of the ephemeral sources + build
+npm run capture:full           # capture + refresh Berghain archive & times
+npm run build                  # → dist/
+npm run dev                    # build + serve + watch on :4321
+npm run stats                  # database summary in the terminal
 ```
 
-`ingest:berghain` is incremental: an artist whose local set count already matches
-upstream is skipped, so a re-run after a new Klubnacht touches only what changed.
-Both ingesters are idempotent — re-running is always safe.
+Everything is incremental and idempotent — re-running is always safe. `ingest:berghain`
+skips artists already current; `ingest:berghain:times` skips past events already
+enriched and re-fetches only recent/upcoming ones.
+
+### The capture pipeline (for the ephemeral sources)
+
+Sisyphos and Tresor lineups are human-maintained, appear late (Sisyphos typically Friday
+night into Saturday), and are **removed after the party**. Miss the window and the data
+is gone. `npm run capture` runs the ingesters, records a per-source before/after delta to
+`data/capture.log`, and is safe to run on a timer.
+
+[.github/workflows/capture.yml](.github/workflows/capture.yml) runs it automatically
+across the weekend (Fri evening → Sun) and commits whatever it caught. To run it locally
+instead, cron it — e.g. every 30 min through the weekend:
+
+```
+*/30 * * * 5,6,0  cd /path/to/berlin_club_dj && npm run capture --silent >> data/cron.log 2>&1
+```
 
 ## Querying it directly
 
@@ -111,8 +143,13 @@ scratch would be months of flyer archaeology to arrive at a worse copy.
 The attribution in the site footer is the licence condition under which this data may
 be used at all. Don't remove it.
 
-Sisyphos event data via [sisyduck.com](https://sisyduck.com) (unofficial; upstream
-[sisy.fan](https://sisy.fan)) — undocumented and unlicensed, so treated as best-effort
-and isolated behind one adapter.
+Berghain **set times** come from the official event pages at
+[berghain.berlin](https://www.berghain.berlin/en/program/).
 
-Unofficial personal archive. Not affiliated with any club.
+Sisyphos event data via [sisyduck.com](https://sisyduck.com) (unofficial; upstream
+[sisy.fan](https://sisy.fan)) and Tresor data from
+[tresorberlin.com](https://tresorberlin.com/club/events/) — both undocumented and
+unlicensed, so treated as best-effort and each isolated behind its own adapter.
+
+The site's **Sources** page (and the footer on every page) list all of this. Unofficial
+personal archive. Not affiliated with any club.

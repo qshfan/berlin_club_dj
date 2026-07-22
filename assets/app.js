@@ -1,6 +1,33 @@
 // Client-side instant search over the prebuilt index. No framework, no network
 // round trip after the first load.
 
+// --- Nights page: club filter tabs ---
+const tabs = document.querySelector('.tabs')
+if (tabs) {
+  const nights = document.getElementById('nights')
+  const apply = (club) => {
+    for (const section of nights.querySelectorAll('.year')) {
+      let shown = 0
+      for (const li of section.querySelectorAll('li[data-club]')) {
+        const match = club === 'all' || li.dataset.club === club
+        li.hidden = !match
+        if (match) shown++
+      }
+      section.hidden = shown === 0
+      const c = section.querySelector('.yr-count')
+      if (c) c.textContent = shown
+    }
+    for (const t of tabs.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.club === club))
+    history.replaceState(null, '', club === 'all' ? location.pathname : `?club=${club}`)
+  }
+  tabs.addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab')
+    if (tab) apply(tab.dataset.club)
+  })
+  const initial = new URLSearchParams(location.search).get('club')
+  if (initial && tabs.querySelector(`.tab[data-club="${initial}"]`)) apply(initial)
+}
+
 const q = document.getElementById('q')
 if (q) {
   const results = document.getElementById('results')
