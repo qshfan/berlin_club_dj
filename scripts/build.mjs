@@ -40,6 +40,9 @@ const fmtTime = (ts) =>
         new Date(ts)
       )
     : null
+// Weekday (Berlin) — parties span several days, so a bare clock is ambiguous.
+const fmtDay = (ts) => (ts ? new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' }).format(new Date(ts)) : '')
+const berlinDayKey = (ts) => (ts ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)) : '')
 
 // Canonical stage order per club; unknown stages sort last, alphabetically.
 const FLOOR_ORDER = [
@@ -261,8 +264,8 @@ writeFileSync(
     <button id="reset" type="button" class="reset" hidden>Reset</button>
   </div>
   <p class="hint" id="hint">Sorted by number of sets played.</p>
-  <ol id="results" class="rows"></ol>
-  <p id="more" class="more"></p>
+  <ol id="results"></ol>
+  <div id="more"></div>
 </section>`,
   })
 )
@@ -328,6 +331,9 @@ for (const a of artists) {
 for (const ev of events) {
   const groups = stageGroups(ev)
   const hasTimes = groups.some((g) => g.rows.some((r) => r.clock))
+  // Show the weekday when the night spans more than one calendar day (all of them do,
+  // but especially Sisyphos, which runs Fri→Mon), so "16:00" isn't ambiguous.
+  const showDay = new Set(groups.flatMap((g) => g.rows).map((r) => berlinDayKey(r.start)).filter(Boolean)).size > 1
   const timetable = groups
     .map(
       (g) => `
@@ -337,8 +343,8 @@ for (const ev of events) {
           ${g.rows
             .map(
               (r) => `<li>
-            <span class="tt-time">${r.clock ? esc(r.clock) : '<span class="muted">—</span>'}</span>
-            <span class="tt-act">${linkBilling(r.billing)}${r.collective ? ` <span class="coll">${esc(r.collective)}</span>` : ''}</span>
+            <span class="tt-time">${r.clock ? `${showDay && r.start ? `<span class="tt-day">${fmtDay(r.start)}</span> ` : ''}${esc(r.clock)}` : '<span class="muted">—</span>'}</span>
+            <span class="tt-act">${linkBilling(r.billing)}</span>
           </li>`
             )
             .join('')}
@@ -438,14 +444,14 @@ writeFileSync(
 <h1>Stats</h1>
 <section>
   <h2>Most booked</h2>
-  <ol class="rows ranked">
+  <ol class="ranklist">
     ${artists
       .slice(0, 25)
       .map(
-        (a, i) => `<li><a href="artist/${a.slug}.html">
-      <span class="rank">${i + 1}</span><span class="name">${esc(a.name)}</span>
-      <span class="bar" style="--w:${(a.sets / artists[0].sets) * 100}%"></span>
-      <span class="count">${a.sets}</span></a></li>`
+        (a, i) => `<li style="--w:${(a.sets / artists[0].sets) * 100}%"><a href="artist/${a.slug}.html">
+      <span class="rrank">${i + 1}</span>
+      <span class="rname">${esc(a.name)}</span>
+      <span class="rcount">${a.sets}</span></a></li>`
       )
       .join('')}
   </ol>

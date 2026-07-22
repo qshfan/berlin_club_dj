@@ -37,7 +37,8 @@ if (q) {
   const fromSel = document.getElementById('from')
   const toSel = document.getElementById('to')
   const resetBtn = document.getElementById('reset')
-  const LIMIT = 60
+  const PAGE_SIZE = 120
+  let page = 0
 
   let artists = []
   let ready = false
@@ -103,42 +104,60 @@ if (q) {
       list = list.slice().sort((x, y) => y.sets - x.sets)
     }
 
-    const shown = list.slice(0, LIMIT)
+    const total = list.length
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+    page = Math.min(Math.max(0, page), pages - 1)
+    const startI = page * PAGE_SIZE
+    const shown = list.slice(startI, startI + PAGE_SIZE)
+
     results.innerHTML = shown
       .map(
-        (a) => `<li><a href="artist/${a.slug}.html">
-      <span class="name">${escapeHtml(a.name)}</span>
-      <span class="yrs">${a.first}${a.last !== a.first ? '–' + a.last : ''}</span>
-      <span class="bar" style="--w:${Math.min(100, (a.sets / artists[0].sets) * 100)}%"></span>
-      <span class="count">${a.sets}</span>
+        (a) => `<li style="--w:${Math.min(100, (a.sets / artists[0].sets) * 100)}%"><a href="artist/${a.slug}.html">
+      <span class="rname">${escapeHtml(a.name)}</span>
+      <span class="rmeta">${a.first}${a.last !== a.first ? '–' + a.last : ''} · ${a.sets} set${a.sets === 1 ? '' : 's'}</span>
     </a></li>`
       )
       .join('')
 
-    const n = list.length.toLocaleString('en')
-    hint.textContent = list.length === artists.length ? `${n} DJs · sorted by sets played` : `${n} DJ${list.length === 1 ? '' : 's'}`
-    more.textContent = list.length > LIMIT ? `Showing first ${LIMIT} of ${n} — narrow with search or filters.` : ''
+    const n = total.toLocaleString('en')
+    hint.textContent = total === artists.length ? `${n} DJs · sorted by sets played` : `${n} DJ${total === 1 ? '' : 's'}`
+
+    // Pagination — lets you browse every DJ, not just the first page.
+    if (total <= PAGE_SIZE) {
+      more.innerHTML = ''
+    } else {
+      more.innerHTML =
+        `<button class="pg" data-pg="prev"${page === 0 ? ' disabled' : ''}>‹ Prev</button>` +
+        `<span class="pg-info">${(startI + 1).toLocaleString('en')}–${Math.min(startI + PAGE_SIZE, total).toLocaleString('en')} of ${n}</span>` +
+        `<button class="pg" data-pg="next"${page >= pages - 1 ? ' disabled' : ''}>Next ›</button>`
+    }
   }
 
   function escapeHtml(s) {
     return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
   }
 
-  // Keep From ≤ To when either changes, then re-render.
+  // Any filter/search change resets to the first page; pagination keeps it.
+  const update = () => {
+    page = 0
+    render()
+  }
+
+  // Keep From ≤ To when either changes.
   function onYearChange(e) {
     if (fromSel && toSel && Number(fromSel.value) > Number(toSel.value)) {
       if (e.target === fromSel) toSel.value = fromSel.value
       else fromSel.value = toSel.value
     }
-    render()
+    update()
   }
 
   let t
   q.addEventListener('input', () => {
     clearTimeout(t)
-    t = setTimeout(render, 60)
+    t = setTimeout(update, 60)
   })
-  clubSel && clubSel.addEventListener('change', render)
+  clubSel && clubSel.addEventListener('change', update)
   fromSel && fromSel.addEventListener('change', onYearChange)
   toSel && toSel.addEventListener('change', onYearChange)
   resetBtn &&
@@ -147,9 +166,18 @@ if (q) {
       if (clubSel) clubSel.value = 'all'
       if (fromSel) fromSel.value = minYear
       if (toSel) toSel.value = maxYear
-      render()
+      update()
       q.focus()
     })
+
+  // Pagination buttons.
+  more.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-pg]')
+    if (!b || b.disabled) return
+    page += b.dataset.pg === 'next' ? 1 : -1
+    render()
+    results.scrollIntoView({ block: 'start' })
+  })
 
   // Enter jumps straight to the top hit.
   q.addEventListener('keydown', (e) => {

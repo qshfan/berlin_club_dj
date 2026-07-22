@@ -104,19 +104,37 @@ footer a { text-decoration: underline; text-underline-offset: 2px; }
 .rows li > a { padding: 0.7rem 0.25rem; }
 .rows li:not(:has(a)) { padding: 0.7rem 0.25rem; }
 .rows li > a:hover { background: var(--panel); text-decoration: none; }
-.rows .name { flex: 1; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rows .num { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 6.5em; }
-.rows .count { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; }
-.rows .rank { font-family: var(--mono); font-size: 11px; color: var(--dim); min-width: 2em; }
-/* Bar is a fixed-width track with a proportional fill, so it never competes with the
-   name column for flex space (which collapsed .name to a single character). */
-.rows .bar { flex: 0 0 clamp(40px, 16%, 140px); height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
-.rows .bar::after { content: ''; display: block; height: 100%; width: var(--w); background: var(--fg); opacity: 0.45; border-radius: 2px; }
-.ranked li > a:hover .bar::after { opacity: 0.75; }
+.rows .name { flex: 1 1 auto; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.rows .num { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 6.5em; flex-shrink: 0; }
+.rows .count { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 /* .rows li sets display:flex, which overrides the UA [hidden] rule — restore it so the
    nights club filter (which toggles li.hidden) actually hides rows. */
 .rows li[hidden] { display: none; }
-.rows .yrs { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+/* DJ results + Most-booked ranking. These use CSS GRID (not flex): the name column is
+   minmax(0,1fr) so it always takes the remaining width and can never collapse, and long
+   names wrap instead of clipping to "Marcel…". This is the definitive fix for truncation. */
+.ranklist { list-style: none; padding: 0; margin: 0; }
+#results li, .ranklist li { border-bottom: 1px solid var(--line); position: relative; }
+#results li > a, .ranklist li > a { display: grid; align-items: baseline; gap: 0.3rem 1rem; padding: 0.8rem 0.25rem; }
+#results li > a { grid-template-columns: minmax(0, 1fr) auto; }
+.ranklist li > a { grid-template-columns: 2.4em minmax(0, 1fr) auto; }
+#results li > a:hover, .ranklist li > a:hover { background: var(--panel); text-decoration: none; }
+.rname { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.rmeta { font-family: var(--mono); font-size: 12px; color: var(--dim); white-space: nowrap; text-align: right; }
+.rrank { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.rcount { font-family: var(--mono); font-size: 13px; color: var(--dim); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+/* proportional rank bar as a non-layout underline (width from --w on the <li>) */
+.ranklist li::after { content: ''; position: absolute; left: 0; bottom: -1px; height: 2px; width: var(--w); background: var(--fg); opacity: 0.28; }
+.ranklist li:hover::after { opacity: 0.55; }
+
+/* pagination for the DJ list */
+#more { display: flex; align-items: center; justify-content: center; gap: 1.25rem; margin-top: 1.5rem; }
+#more:empty { display: none; }
+.pg { font: inherit; font-size: 13px; padding: 0.5rem 1rem; background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; }
+.pg:hover:not(:disabled) { border-color: var(--fg); }
+.pg:disabled { color: var(--dim); opacity: 0.4; cursor: default; }
+.pg-info { font-family: var(--mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 /* ---------- club tags ---------- */
 .club {
@@ -163,7 +181,8 @@ footer a { text-decoration: underline; text-underline-offset: 2px; }
 .timetable .floor { margin: 0; }
 ol.tt { list-style: none; padding: 0; margin: 0.4rem 0 0; }
 ol.tt li { display: flex; gap: 0.85rem; align-items: baseline; padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
-.tt-time { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 3.6em; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tt-time { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 5.4em; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tt-day { color: var(--fg); opacity: 0.55; }
 .tt-act { font-weight: 500; }
 .tt-act a { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line); }
 .tt-act a:hover { text-decoration-color: currentColor; }

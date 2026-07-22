@@ -113,8 +113,22 @@ for (const ev of todo) {
     continue
   }
 
+  // Berghain fills in and edits lineups for the next few weeks, so a re-fetched event may
+  // have changed, not just grown. Clean-replace this event's set-time rows (only the ones
+  // this scraper owns) so edits sync exactly instead of leaving stale slots behind. The
+  // archive's own performance rows (a different source) are untouched; we only re-derive
+  // their start_time via the upserts below.
+  const freshCount = parsed.stages.reduce((n, s) => n + s.slots.length, 0)
+  if (freshCount === 0) {
+    // Lineup not posted yet (or pulled) — don't wipe a good earlier capture over an empty one.
+    await sleep(DELAY_MS)
+    continue
+  }
+
   db.exec('BEGIN')
   try {
+    db.prepare('DELETE FROM slots WHERE event_id = ? AND source = ?').run(ev.id, SOURCE)
+    db.prepare('DELETE FROM performances WHERE event_id = ? AND source = ?').run(ev.id, SOURCE)
     for (const stage of parsed.stages) {
       const floorId = upsertFloor(db, clubId, stage.stage)
       const times = resolveStageTimes(ev.iso_date, stage.slots)
