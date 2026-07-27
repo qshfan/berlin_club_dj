@@ -1,17 +1,25 @@
 name: capture ephemeral lineups
 
 # Sisyphos and Tresor publish lineups late and remove them after the party. This captures
-# them before they vanish (gone by Wed/Thu), then commits the updated database. Runs once
-# on Sunday — by then the weekend's lineups are up but not yet removed. Trigger manually
-# any time via the Actions tab (workflow_dispatch) if you want an extra catch.
+# them before they vanish (gone by Wed/Thu), commits the updated database, then builds and
+# deploys the site. Runs once on Sunday; trigger manually anytime via the Actions tab.
+#
+# Why this deploys directly instead of letting deploy.yml's push-trigger handle it: a commit
+# pushed with the default GITHUB_TOKEN does NOT trigger other workflows (GitHub's anti-loop
+# rule), so a separate push-triggered deploy would never fire for the capture commit. Doing
+# capture → commit → build → deploy in one workflow avoids that entirely.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 14 * * 0'   # Sun 14:00 UTC (Berlin 15:00/16:00)
+    # Midnight Sat→Sun CET = Sat 23:00 UTC. (GitHub cron is UTC and ignores DST, so in
+    # summer/CEST this effectively fires at 01:00 local — still the Sat→Sun small hours.)
+    - cron: '0 23 * * 6'
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: capture
@@ -42,3 +50,24 @@ jobs:
           else
             echo "nothing new captured this run"
           fi
+
+      - name: Build site
+        run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: capture
+    runs-on: ubuntu-latest
+    # Share the Pages concurrency queue with deploy.yml so the two never publish at once.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
