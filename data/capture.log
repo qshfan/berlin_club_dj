@@ -4,3 +4,4 @@
 {"at":"2026-08-01T23:53:33.818Z","mode":"capture","events":1179,"newEvents":13,"newPerfs":74,"slotDelta":{"berghain.berlin":14,"sisyduck.com":0,"tresorberlin.com":70},"failures":[]}
 {"at":"2026-08-08T23:23:49.248Z","mode":"capture","events":1186,"newEvents":7,"newPerfs":121,"slotDelta":{"berghain.berlin":19,"sisyduck.com":52,"tresorberlin.com":7},"failures":[]}
 {"at":"2026-08-15T23:15:23.030Z","mode":"capture","events":1189,"newEvents":3,"newPerfs":79,"slotDelta":{"berghain.berlin":15,"sisyduck.com":53,"tresorberlin.com":20},"failures":[]}
+{"at":"2026-08-22T23:15:59.621Z","mode":"capture","events":1190,"newEvents":1,"newPerfs":57,"slotDelta":{"berghain.berlin":14,"sisyduck.com":54,"tresorberlin.com":0},"failures":[]}
